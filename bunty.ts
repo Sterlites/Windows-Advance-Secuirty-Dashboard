@@ -1,6 +1,9 @@
 // bunty.ts — Ultra-Fast Windows 11 Sentinel (Sub-2-Second PowerShell + .NET Engine)
 // Run with: bun run bunty.ts
 
+declare const Bun: any;
+declare const Buffer: any;
+
 const PORT = 3000;
 const GEMINI_API_KEY = Bun.env.GEMINI_API_KEY || "";
 
@@ -670,7 +673,7 @@ const HTML_UI = `<!DOCTYPE html>
 const server = Bun.serve({
   port: PORT,
   idleTimeout: 120, // Prevents Bun's default 10-second timeout
-  async fetch(req) {
+  async fetch(req: Request) {
     const url = new URL(req.url);
 
     if (url.pathname === "/") {
