@@ -73,3 +73,4 @@ function installHooks() {
 if (import.meta.main) {
   installHooks();
 }
+

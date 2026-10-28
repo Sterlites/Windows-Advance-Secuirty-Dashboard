@@ -13,3 +13,4 @@ When working on this repository (`Windows Advance Secuirty Dashboard` / `bunty.t
    - Verify that any newly introduced command has a title, description, PowerShell script, and corresponding rollback script if applicable.
    - Any new REST or SSE endpoint must be documented in the route dispatcher table.
    - Verify that all sensitive tokens (API keys, home dirs, usernames, MAC addresses) are scrubbed through `sanitizeString` / `sanitizeData`.
+
