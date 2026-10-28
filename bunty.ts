@@ -197,8 +197,22 @@ try {
         $tp  = [bool]$mp.IsTamperProtected
         $sigAge = [int]$mp.AntivirusSignatureAge
     }
-    $puaReg = (Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Windows Defender\\MpEngine' -ErrorAction SilentlyContinue).MpEnablePus
-    if ($puaReg -eq 1) { $pua = $true }
+    $mpPref = Get-CimInstance -Namespace "root/Microsoft/Windows/Defender" -ClassName "MSFT_MpPreference" -ErrorAction SilentlyContinue
+    if ($mpPref -and ($mpPref.PUAProtection -eq 1 -or $mpPref.PUAProtection -eq 2)) {
+        $pua = $true
+    }
+    if (-not $pua) {
+        $puaReg = (Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Windows Defender\\MpEngine' -ErrorAction SilentlyContinue).MpEnablePus
+        if ($puaReg -eq 1) { $pua = $true }
+    }
+    if (-not $pua) {
+        $puaPol = (Get-ItemProperty 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\MpEngine' -ErrorAction SilentlyContinue).MpEnablePus
+        if ($puaPol -eq 1) { $pua = $true }
+    }
+    if (-not $pua) {
+        $puaPol2 = (Get-ItemProperty 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows Defender' -ErrorAction SilentlyContinue).PUAProtection
+        if ($puaPol2 -eq 1) { $pua = $true }
+    }
 } catch {}
 
 # 9. VBS / HVCI
@@ -353,7 +367,7 @@ try {
     }
 } catch {}
 
-$score = 35
+$score = 25
 if ($rtp) { $score += 15 }
 if ($tp) { $score += 10 }
 if ($hvciRunning) { $score += 10 }
@@ -362,6 +376,7 @@ if ($lsaPPL) { $score += 10 }
 if (-not $smb1Enabled) { $score += 5 }
 if ($smbSigning) { $score += 5 }
 if ($llmnrDisabled) { $score += 5 }
+if ($pua) { $score += 15 }
 if ($score -gt 100) { $score = 100 }
 
 $sw.Stop()
@@ -423,13 +438,13 @@ const REMEDIATION_COMMANDS: Record<string, RemediationAction> = {
   enable_pua: {
     title: "Enable Defender PUA Protection",
     description: "Blocks adware, coin-miners, and unwanted bundleware",
-    script: `Set-MpPreference -PUAProtection Enabled -ErrorAction Stop; Write-Output "SUCCESS: Defender PUA Protection Enabled."`,
+    script: `Set-MpPreference -PUAProtection Enabled -ErrorAction Stop; if (!(Test-Path "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\MpEngine")) { New-Item -Path "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\MpEngine" -Force -ErrorAction SilentlyContinue | Out-Null }; Set-ItemProperty -Path "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\MpEngine" -Name "MpEnablePus" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue; Write-Output "SUCCESS: Defender PUA Protection Enabled."`,
     rollbackActionId: "disable_pua"
   },
   disable_pua: {
     title: "Rollback Defender PUA Protection",
     description: "Reverts PUA protection to standard disabled state",
-    script: `Set-MpPreference -PUAProtection Disabled -ErrorAction Stop; Write-Output "ROLLBACK: Defender PUA Protection Disabled."`,
+    script: `Set-MpPreference -PUAProtection Disabled -ErrorAction Stop; Set-ItemProperty -Path "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\MpEngine" -Name "MpEnablePus" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue; Write-Output "ROLLBACK: Defender PUA Protection Disabled."`,
     isRollback: true
   },
   disable_smbv1: {
@@ -484,6 +499,69 @@ function toEncodedCommand(psScript: string): string {
   return Buffer.from(psScript, "utf16le").toString("base64");
 }
 
+function cleanPowerShellStderr(rawStderr: string): { text: string; isError: boolean } | null {
+  const trimmed = rawStderr.trim();
+  if (!trimmed) return null;
+
+  // Check if stderr contains PowerShell CLIXML stream data
+  if (trimmed.startsWith("#< CLIXML") || trimmed.includes("<Objs Version=") || trimmed.includes("<Obj S=")) {
+    const hasError = /<S S="[Ee]rror">|<Obj S="[Ee]rror"/i.test(trimmed);
+    const hasWarning = /<S S="[Ww]arning">|<Obj S="[Ww]arning"/i.test(trimmed);
+
+    // Suppress pure progress records (e.g. "Preparing modules for first use", download percent)
+    if (!hasError && !hasWarning) {
+      return null;
+    }
+
+    // Extract error text from CLIXML
+    const errorMatches = [...trimmed.matchAll(/<S S="[Ee]rror">([^<]+)<\/S>/g)];
+    if (errorMatches.length > 0) {
+      const combined = errorMatches
+        .map((m) => m[1])
+        .join("")
+        .replace(/_x000D__x000A_/g, "\n")
+        .replace(/_x000D_/g, "\r")
+        .replace(/_x000A_/g, "\n")
+        .replace(/_x0009_/g, "\t")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&amp;/g, "&")
+        .replace(/&quot;/g, '"')
+        .replace(/&apos;/g, "'")
+        .trim();
+      return combined ? { text: combined, isError: true } : null;
+    }
+
+    // Extract warning text from CLIXML
+    const warnMatches = [...trimmed.matchAll(/<S S="[Ww]arning">([^<]+)<\/S>/g)];
+    if (warnMatches.length > 0) {
+      const combined = warnMatches
+        .map((m) => m[1])
+        .join("")
+        .replace(/_x000D__x000A_/g, "\n")
+        .replace(/_x000D_/g, "\r")
+        .replace(/_x000A_/g, "\n")
+        .replace(/_x0009_/g, "\t")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&amp;/g, "&")
+        .trim();
+      return combined ? { text: combined, isError: false } : null;
+    }
+
+    // Fallback for custom Message tags
+    const msgMatches = [...trimmed.matchAll(/<S N="Message">([^<]+)<\/S>/g)];
+    if (msgMatches.length > 0) {
+      const combined = msgMatches.map((m) => m[1]).join("\n").trim();
+      return { text: combined, isError: true };
+    }
+
+    return null;
+  }
+
+  return { text: trimmed, isError: true };
+}
+
 // ---------------------------------------------------------------------------
 // 6. STREAMING EXECUTION ENGINE & STATE MACHINE MUTEX
 // ---------------------------------------------------------------------------
@@ -511,7 +589,9 @@ async function executeAndStreamCommand(
     text: `[STATE MACHINE] Dispatched '${title}' (${actionId}) to PowerShell IPC pipe...`
   });
 
-  const encoded = toEncodedCommand(psScript);
+  // Prepend preference variables to silence internal progress CLIXML stream
+  const wrappedScript = `$ProgressPreference = 'SilentlyContinue'; $WarningPreference = 'SilentlyContinue'; $InformationPreference = 'Continue';\n${psScript}`;
+  const encoded = toEncodedCommand(wrappedScript);
   const proc = Bun.spawn(
     [
       "powershell.exe",
@@ -529,7 +609,8 @@ async function executeAndStreamCommand(
   let fullStdout = "";
   let fullStderr = "";
 
-  const readPipe = async (stream: ReadableStream<Uint8Array>, isErr = false) => {
+  let stdoutBuffer = "";
+  const readStdout = async (stream: ReadableStream<Uint8Array>) => {
     const reader = stream.getReader();
     const decoder = new TextDecoder();
     try {
@@ -538,24 +619,66 @@ async function executeAndStreamCommand(
         if (done) break;
         const text = decoder.decode(value, { stream: true });
         if (text) {
-          if (isErr) fullStderr += text;
-          else fullStdout += text;
-
-          sseHub.broadcast("terminal_log", {
-            type: isErr ? "stderr" : "stdout",
-            actionId,
-            text: sanitizeString(text)
-          });
+          fullStdout += text;
+          stdoutBuffer += text;
+          const lines = stdoutBuffer.split(/\r?\n/);
+          stdoutBuffer = lines.pop() ?? "";
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed) {
+              sseHub.broadcast("terminal_log", {
+                type: "stdout",
+                actionId,
+                text: sanitizeString(trimmed)
+              });
+            }
+          }
         }
       }
+      if (stdoutBuffer.trim()) {
+        sseHub.broadcast("terminal_log", {
+          type: "stdout",
+          actionId,
+          text: sanitizeString(stdoutBuffer.trim())
+        });
+      }
     } catch {
-      // Stream reader closed cleanly
+      // Reader closed cleanly
     } finally {
       reader.releaseLock();
     }
   };
 
-  await Promise.all([readPipe(proc.stdout, false), readPipe(proc.stderr, true), proc.exited]);
+  const readStderr = async (stream: ReadableStream<Uint8Array>) => {
+    const reader = stream.getReader();
+    const decoder = new TextDecoder();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const text = decoder.decode(value, { stream: true });
+        if (text) {
+          fullStderr += text;
+        }
+      }
+    } catch {
+      // Reader closed cleanly
+    } finally {
+      reader.releaseLock();
+    }
+  };
+
+  await Promise.all([readStdout(proc.stdout), readStderr(proc.stderr), proc.exited]);
+
+  // Clean and parse stderr to remove progress XML blobs
+  const cleanedErr = cleanPowerShellStderr(fullStderr);
+  if (cleanedErr && cleanedErr.text) {
+    sseHub.broadcast("terminal_log", {
+      type: cleanedErr.isError ? "stderr" : "state",
+      actionId,
+      text: sanitizeString(cleanedErr.text)
+    });
+  }
 
   const durationMs = Date.now() - startTime;
   const exitCode = proc.exitCode ?? 0;
@@ -580,7 +703,7 @@ async function executeAndStreamCommand(
   return {
     ok,
     stdout: sanitizeString(fullStdout.trim()),
-    stderr: sanitizeString(fullStderr.trim()),
+    stderr: sanitizeString(cleanedErr ? cleanedErr.text : ""),
     exitCode,
     durationMs
   };
@@ -807,7 +930,12 @@ function safeRender(containerId, renderFn, componentName) {
 // Terminal Readout Engine
 function appendTerminalLog(type, text) {
   const term = document.getElementById('terminalOutput');
-  if (!term) return;
+  if (!term || !text) return;
+
+  // Suppress raw PowerShell CLIXML serialization XML tags
+  if (typeof text === 'string' && (text.includes('#< CLIXML') || text.includes('<Objs Version=') || text.includes('<Obj S='))) {
+    return;
+  }
 
   const now = new Date().toTimeString().split(' ')[0];
   const div = document.createElement('div');
