@@ -1,0 +1,30 @@
+{
+  "name": "windows-11-sentinel",
+  "version": "1.0.0",
+  "description": "Ultra-Fast Windows 11 Sentinel: Live Mission Control Center (Single-File Architecture)",
+  "main": "bunty.ts",
+  "type": "module",
+  "scripts": {
+    "start": "bun run bunty.ts",
+    "dev": "bun --watch bunty.ts",
+    "sync-docs": "bun run scripts/sync-readme.ts",
+    "watch:docs": "bun run scripts/watch-docs.ts",
+    "install-hooks": "bun run scripts/install-hooks.ts",
+    "prepare": "bun run scripts/install-hooks.ts"
+  },
+  "keywords": [
+    "windows11",
+    "security",
+    "sentinel",
+    "bun",
+    "powershell",
+    "mission-control",
+    "bitlocker",
+    "hardening",
+    "gemini-ai",
+    "sse",
+    "telemetry"
+  ],
+  "author": "Antigravity Engineering",
+  "license": "MIT"
+}

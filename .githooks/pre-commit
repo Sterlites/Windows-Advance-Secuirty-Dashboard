@@ -1,0 +1,16 @@
+#!/bin/sh
+# Windows 11 Sentinel — Autonomous Documentation Sync Pre-Commit Hook
+# Automatically syncs README.md when bunty.ts has functional changes
+
+echo "⚡ [SENTINEL-HOOK] Checking for functional changes in bunty.ts..."
+
+# Run the Bun documentation synchronizer
+bun run scripts/sync-readme.ts
+
+# If README.md or state was updated, stage them automatically into this commit
+if [ -f README.md ]; then
+  git add README.md .sentinel/doc-state.json 2>/dev/null
+  echo "✅ [SENTINEL-HOOK] README.md and documentation state synchronized and staged."
+fi
+
+exit 0

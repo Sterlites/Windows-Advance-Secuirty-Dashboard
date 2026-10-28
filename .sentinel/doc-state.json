@@ -1,0 +1,243 @@
+{
+  "hash": "4e4262920315684089fd431326a1aa154a0129e9d5f69b61ef1c2de4620d4e65",
+  "sourceCodeHash": "a2964ebff1b570db",
+  "lastUpdated": "2026-10-28 15:14:40 UTC",
+  "endpoints": [
+    {
+      "path": "/",
+      "method": "GET",
+      "description": "Dashboard Landing Page"
+    },
+    {
+      "path": "/app.js",
+      "method": "GET",
+      "description": "Client Application Bundle"
+    },
+    {
+      "path": "/api/stream",
+      "method": "GET",
+      "description": "Server-Sent Events (SSE) Loopback Stream"
+    },
+    {
+      "path": "/api/telemetry",
+      "method": "GET",
+      "description": "Telemetry Endpoint"
+    },
+    {
+      "path": "/api/remediate",
+      "method": "POST",
+      "description": "Remediation Execution Endpoint (Atomic Mutex Guarded)"
+    },
+    {
+      "path": "/api/ai-audit",
+      "method": "POST",
+      "description": "Gemini AI Neural Threat Audit Endpoint"
+    }
+  ],
+  "remediations": [
+    {
+      "id": "enable_pua",
+      "title": "Enable Defender PUA Protection",
+      "description": "Blocks adware, coin-miners, and unwanted bundleware",
+      "rollbackActionId": "disable_pua",
+      "isRollback": false
+    },
+    {
+      "id": "disable_pua",
+      "title": "Rollback Defender PUA Protection",
+      "description": "Reverts PUA protection to standard disabled state",
+      "isRollback": true
+    },
+    {
+      "id": "disable_smbv1",
+      "title": "Disable SMBv1 & Require SMB Signing",
+      "description": "Stops EternalBlue and NTLM relay lateral movements",
+      "rollbackActionId": "enable_smbv1",
+      "isRollback": false
+    },
+    {
+      "id": "enable_smbv1",
+      "title": "Rollback SMBv1 Configuration",
+      "description": "Re-enables legacy SMBv1 networking parameter",
+      "isRollback": true
+    },
+    {
+      "id": "enable_lsappl",
+      "title": "Enable LSA RunAsPPL Protection",
+      "description": "Hardens LSASS against Mimikatz credential dumping",
+      "rollbackActionId": "disable_lsappl",
+      "isRollback": false
+    },
+    {
+      "id": "disable_lsappl",
+      "title": "Rollback LSA RunAsPPL Protection",
+      "description": "Disables LSA RunAsPPL credential protection",
+      "isRollback": true
+    },
+    {
+      "id": "disable_llmnr",
+      "title": "Disable LLMNR Multicast Spoofing",
+      "description": "Blocks Responder and LLMNR/NBT-NS rogue poisoners on LAN",
+      "rollbackActionId": "enable_llmnr",
+      "isRollback": false
+    },
+    {
+      "id": "enable_llmnr",
+      "title": "Rollback LLMNR Multicast Configuration",
+      "description": "Restores LLMNR multicast resolution",
+      "isRollback": true
+    },
+    {
+      "id": "flush_dns",
+      "title": "Flush DNS Resolver Cache",
+      "description": "Purges client-side DNS cache entries",
+      "isRollback": false
+    },
+    {
+      "id": "update_signatures",
+      "title": "Update Defender Antivirus Signatures",
+      "description": "Pulls the latest threat intelligence signatures directly from Microsoft",
+      "isRollback": false
+    }
+  ],
+  "envVars": [
+    {
+      "name": "PORT",
+      "defaultValue": "3000",
+      "description": "TCP port for the Mission Control HTTP and SSE server (Default: 3000)"
+    },
+    {
+      "name": "HOST",
+      "defaultValue": "localhost",
+      "description": "Binding host address (Default: localhost)"
+    },
+    {
+      "name": "GEMINI_API_KEY",
+      "defaultValue": "(None)",
+      "description": "Google Gemini API key for neural threat analysis (Optional, can also be provided in UI)"
+    },
+    {
+      "name": "GEMINI_MODEL",
+      "defaultValue": "gemini-2.5-flash",
+      "description": "Google Gemini model tag for threat auditing (Default: gemini-2.5-flash)"
+    },
+    {
+      "name": "AUTO_LAUNCH",
+      "defaultValue": "(Computed)",
+      "description": "Auto-launch default browser on startup (Set 'false' to disable)"
+    },
+    {
+      "name": "NO_BROWSER",
+      "defaultValue": "(Computed)",
+      "description": "Alternative flag to inhibit browser auto-launching (Set '1' to disable)"
+    },
+    {
+      "name": "CI",
+      "defaultValue": "(Computed)",
+      "description": "CI environment flag (Inhibits browser auto-launch when set)"
+    },
+    {
+      "name": "SCRUB_TELEMETRY",
+      "defaultValue": "(Computed)",
+      "description": "Toggle zero-leak telemetry scrubber (Set 'false' to bypass redaction; Default: true)"
+    },
+    {
+      "name": "USERNAME",
+      "defaultValue": "(Computed)",
+      "description": "Windows current operator username (Scrubbed in outbound telemetry)"
+    },
+    {
+      "name": "USER",
+      "defaultValue": "(Computed)",
+      "description": "Runtime environment flag USER"
+    },
+    {
+      "name": "LOGNAME",
+      "defaultValue": "(None)",
+      "description": "Runtime environment flag LOGNAME"
+    },
+    {
+      "name": "USERPROFILE",
+      "defaultValue": "(Computed)",
+      "description": "Windows user profile directory (Scrubbed in outbound telemetry)"
+    },
+    {
+      "name": "HOME",
+      "defaultValue": "(None)",
+      "description": "Runtime environment flag HOME"
+    }
+  ],
+  "scoring": {
+    "base": 25,
+    "rules": [
+      {
+        "target": "$rtp",
+        "points": 15
+      },
+      {
+        "target": "$tp",
+        "points": 10
+      },
+      {
+        "target": "$hvciRunning",
+        "points": 10
+      },
+      {
+        "target": "$vbsRunning",
+        "points": 5
+      },
+      {
+        "target": "$lsaPPL",
+        "points": 10
+      },
+      {
+        "target": "-not $smb1Enabled",
+        "points": 5
+      },
+      {
+        "target": "$smbSigning",
+        "points": 5
+      },
+      {
+        "target": "$llmnrDisabled",
+        "points": 5
+      },
+      {
+        "target": "$pua",
+        "points": 15
+      }
+    ]
+  },
+  "telemetryModules": [
+    "1. OS & Platform (0ms via Registry & Environment)",
+    "2. CPU Name (0ms via Registry)",
+    "3. GPU Controller Name (0ms via Registry)",
+    "4. BIOS Details (0ms via Registry)",
+    "5. Memory Metrics (0ms via .NET ComputerInfo)",
+    "6. Instant Uptime",
+    "7. CPU Load Calculation",
+    "8. Defender & Security Enclaves (Fast WMI & Direct Registry)",
+    "9. VBS / HVCI",
+    "10. LSA, SMBv1, SMB Signing, LLMNR (0ms Registry)",
+    "11. Disks & BitLocker (0ms via .NET DriveInfo)",
+    "12. Network Socket Enumeration via netstat -ano (< 30ms)",
+    "13. Startup Persistence (0ms via Registry)",
+    "14. System Events (Fast Get-WinEvent)"
+  ],
+  "history": [
+    {
+      "timestamp": "2026-10-28 15:11:08 UTC",
+      "description": "Remediation commands updated: 1 -> 10",
+      "changes": [
+        "Remediation commands updated: 1 -> 10"
+      ]
+    },
+    {
+      "timestamp": "2026-10-28 15:09:58 UTC",
+      "description": "Initial baseline synchronization",
+      "changes": [
+        "Initial baseline synchronization"
+      ]
+    }
+  ]
+}
