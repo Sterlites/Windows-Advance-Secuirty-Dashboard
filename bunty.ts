@@ -1000,6 +1000,146 @@ function escapeHtml(str) {
     .replace(/'/g, '&#039;');
 }
 
+// ---------------------------------------------------------------------------
+// Sentinel Mission Control Ultra-Detailed Tooltip Engine
+// ---------------------------------------------------------------------------
+function initTooltipEngine() {
+  let tooltipEl = document.getElementById('sentinelTooltip');
+  if (!tooltipEl) {
+    tooltipEl = document.createElement('div');
+    tooltipEl.id = 'sentinelTooltip';
+    document.body.appendChild(tooltipEl);
+  }
+
+  let activeTarget = null;
+
+  function showTooltip(target, e) {
+    const tipData = getTooltipData(target);
+    if (!tipData) {
+      hideTooltip();
+      return;
+    }
+
+    activeTarget = target;
+
+    let html = '';
+    if (tipData.category) {
+      html += '<div class="tip-category">' + escapeHtml(tipData.category) + '</div>';
+    }
+    if (tipData.title) {
+      html += '<div class="tip-title">' + escapeHtml(tipData.title) + '</div>';
+    }
+    if (tipData.desc) {
+      html += '<div class="tip-body">' + escapeHtml(tipData.desc) + '</div>';
+    }
+    if (tipData.risk) {
+      html += '<div class="tip-detail"><span class="tip-risk font-semibold">⚠️ Attack Vector / Risk: </span><span class="text-rose-200/90">' + escapeHtml(tipData.risk) + '</span></div>';
+    }
+    if (tipData.cmd) {
+      html += '<div class="tip-detail"><span class="text-cyan-400 font-semibold font-mono">⚡ Command / Registry:</span><span class="tip-cmd">' + escapeHtml(tipData.cmd) + '</span></div>';
+    }
+    if (tipData.impact) {
+      html += '<div class="tip-detail"><span class="text-amber-400 font-semibold font-mono">ℹ️ Impact: </span><span class="text-slate-300">' + escapeHtml(tipData.impact) + '</span></div>';
+    }
+    if (tipData.status) {
+      html += '<div class="tip-detail"><span class="text-slate-400 font-mono">Status: </span>' + tipData.status + '</div>';
+    }
+
+    tooltipEl.innerHTML = html;
+    tooltipEl.classList.remove('hidden');
+    positionTooltip(target, e);
+    tooltipEl.classList.add('visible');
+  }
+
+  function positionTooltip(target, e) {
+    if (!activeTarget) return;
+    const rect = target.getBoundingClientRect();
+    const tipRect = tooltipEl.getBoundingClientRect();
+    const margin = 12;
+
+    // Prefer positioning centered above target
+    let top = rect.top - tipRect.height - 8;
+    let left = rect.left + (rect.width - tipRect.width) / 2;
+
+    // If overflows above viewport, flip below target
+    if (top < margin) {
+      top = rect.bottom + 8;
+    }
+
+    // Clamp horizontally within viewport
+    if (left < margin) {
+      left = margin;
+    } else if (left + tipRect.width > window.innerWidth - margin) {
+      left = window.innerWidth - tipRect.width - margin;
+    }
+
+    // If bottom also overflows, position safely within viewport
+    if (top + tipRect.height > window.innerHeight - margin) {
+      top = Math.max(margin, window.innerHeight - tipRect.height - margin);
+    }
+
+    tooltipEl.style.top = Math.round(top) + 'px';
+    tooltipEl.style.left = Math.round(left) + 'px';
+  }
+
+  function hideTooltip() {
+    activeTarget = null;
+    tooltipEl.classList.remove('visible');
+  }
+
+  function getTooltipData(el) {
+    if (!el || el === document.body || el === document.documentElement) return null;
+    const target = el.closest('[data-tip-title], [data-tip-desc], [data-tip], [data-tooltip], [title]');
+    if (!target) return null;
+
+    // Convert standard title attributes seamlessly and prevent ugly native box collision
+    if (target.hasAttribute('title') && !target.hasAttribute('data-tip-title') && !target.hasAttribute('data-tip-desc') && !target.hasAttribute('data-tip')) {
+      const origTitle = target.getAttribute('title');
+      if (origTitle && origTitle.trim()) {
+        target.setAttribute('data-tip-desc', origTitle.trim());
+        target.setAttribute('data-original-title', origTitle);
+        target.removeAttribute('title');
+      }
+    }
+
+    const title = target.getAttribute('data-tip-title') || '';
+    const desc = target.getAttribute('data-tip-desc') || target.getAttribute('data-tip') || target.getAttribute('data-tooltip') || '';
+    const category = target.getAttribute('data-tip-category') || '';
+    const risk = target.getAttribute('data-tip-risk') || '';
+    const cmd = target.getAttribute('data-tip-cmd') || '';
+    const impact = target.getAttribute('data-tip-impact') || '';
+    const status = target.getAttribute('data-tip-status') || '';
+
+    if (!title && !desc) return null;
+    return { title, desc, category, risk, cmd, impact, status, target };
+  }
+
+  document.addEventListener('pointerover', (e) => {
+    const tipData = getTooltipData(e.target);
+    if (tipData && tipData.target) {
+      showTooltip(tipData.target, e);
+    }
+  }, true);
+
+  document.addEventListener('pointerout', (e) => {
+    if (activeTarget && (!e.relatedTarget || !activeTarget.contains(e.relatedTarget))) {
+      hideTooltip();
+    }
+  }, true);
+
+  document.addEventListener('scroll', () => {
+    if (activeTarget) {
+      positionTooltip(activeTarget);
+    }
+  }, true);
+
+  window.addEventListener('resize', () => {
+    if (activeTarget) {
+      positionTooltip(activeTarget);
+    }
+  });
+}
+
 // Server-Sent Events (SSE) Loopback Listener
 function initSSE() {
   const sseBadge = document.getElementById('sseBadge');
@@ -1234,8 +1374,35 @@ function renderSystemHeader(d) {
   if (adminBadge) {
     adminBadge.textContent = (d.isAdmin ? 'ADMINISTRATOR MODE' : 'STANDARD OPERATOR') + ' (' + (d.scanTimeMs || 0) + 'ms)';
     adminBadge.className = d.isAdmin
-      ? 'text-xs px-2.5 py-0.5 rounded-full font-mono font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-[0_0_10px_rgba(16,185,129,0.2)]'
-      : 'text-xs px-2.5 py-0.5 rounded-full font-mono font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40';
+      ? 'text-xs px-2.5 py-0.5 rounded-full font-mono font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-[0_0_10px_rgba(16,185,129,0.2)] cursor-help'
+      : 'text-xs px-2.5 py-0.5 rounded-full font-mono font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40 cursor-help';
+    adminBadge.setAttribute('data-tip-category', 'PROCESS INTEGRITY');
+    adminBadge.setAttribute('data-tip-title', d.isAdmin ? 'Elevated Administrator Context' : 'Standard Operator Privilege');
+    adminBadge.setAttribute('data-tip-desc', d.isAdmin
+      ? 'Running under High Integrity Level (SeDebugPrivilege). Telemetry collector has full access to BitLocker encryption keys, Defender WMI namespaces, and kernel drivers. Atomic remediations execute with complete administrative authorization.'
+      : 'Running under Medium Integrity Level. Hardening modifications to HKLM and BitLocker volume encryption queries require launching Sentinel with elevated Administrator privileges.');
+    adminBadge.setAttribute('data-tip-impact', d.isAdmin ? 'Full administrative authority active.' : 'Relaunch as Administrator for unrestricted hardening capabilities.');
+  }
+
+  // Dynamic Posture Tooltip with exact host breakdown
+  const scoreCard = document.getElementById('scoreVal')?.closest('.glass');
+  if (scoreCard) {
+    const breakdown = [
+      '• Base Baseline: 25 pts',
+      '• Defender Real-Time Monitoring: ' + (s.realTimeProtection ? '+15 pts (ENFORCED)' : '+0 pts (EXPOSED)'),
+      '• Defender PUA/PUP Blocking: ' + (s.puaProtection ? '+15 pts (ENFORCED)' : '+0 pts (EXPOSED)'),
+      '• Tamper Protection Engine: ' + (s.tamperProtection ? '+10 pts (ENFORCED)' : '+0 pts (EXPOSED)'),
+      '• HVCI Memory Integrity: ' + (s.hvciEnabled ? '+10 pts (ENFORCED)' : '+0 pts (EXPOSED)'),
+      '• LSA RunAsPPL Credential Guard: ' + (s.lsaPPL ? '+10 pts (ENFORCED)' : '+0 pts (EXPOSED)'),
+      '• Virtualization-Based Security (VBS): ' + (s.vbsEnabled ? '+5 pts (ENFORCED)' : '+0 pts (EXPOSED)'),
+      '• Legacy SMBv1 Disabled: ' + (!s.smb1Enabled ? '+5 pts (ENFORCED)' : '+0 pts (EXPOSED)'),
+      '• SMB Packet Signing Required: ' + (s.smbSigning ? '+5 pts (ENFORCED)' : '+0 pts (EXPOSED)'),
+      '• LLMNR Multicast Spoofing Disabled: ' + (s.llmnrDisabled ? '+5 pts (ENFORCED)' : '+0 pts (EXPOSED)')
+    ].join('\n');
+    scoreCard.setAttribute('data-tip-category', 'POSTURE SCORING MATRIX');
+    scoreCard.setAttribute('data-tip-title', 'Security Posture Score: ' + score + ' / 100');
+    scoreCard.setAttribute('data-tip-desc', 'Audited compliance across Windows 11 kernel, memory, network, and registry baseline controls:\n' + breakdown);
+    scoreCard.setAttribute('data-tip-impact', score >= 80 ? 'System posture hardened. Optimal security profile.' : score >= 55 ? 'Moderate security gaps identified. Remediation recommended.' : 'CRITICAL DEFENSE GAPS! Immediate remediation required.');
   }
 
   // Tickers
@@ -1256,7 +1423,10 @@ function renderAnomalyQueue(d) {
 
   if (!anomalies.length) {
     container.innerHTML =
-      '<div class="p-4 rounded-xl bg-emerald-950/20 border border-emerald-500/30 text-emerald-300 text-xs font-mono flex items-center justify-between">' +
+      '<div class="p-4 rounded-xl bg-emerald-950/20 border border-emerald-500/30 text-emerald-300 text-xs font-mono flex items-center justify-between cursor-help" ' +
+        'data-tip-category="SECURITY POSTURE OPTIMAL" ' +
+        'data-tip-title="Zero Active Vulnerabilities" ' +
+        'data-tip-desc="All 10 audited Windows 11 kernel, memory, network, and registry baseline controls are fully in compliance.">' +
         '<span>✓ ZERO ACTIVE ANOMALIES DETECTED — SYSTEM POSTURE OPTIMAL</span>' +
         '<span class="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400">HARDENED</span>' +
       '</div>';
@@ -1266,23 +1436,31 @@ function renderAnomalyQueue(d) {
   container.innerHTML = anomalies.map(a => {
     let priorityBadge = '';
     let borderClass = '';
+    let prioLabel = 'POSTURE GAP';
     if (a.priority === 'critical') {
+      prioLabel = 'CRITICAL VULNERABILITY';
       priorityBadge = '<span class="text-[10px] px-2 py-0.5 rounded font-mono font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse">CRITICAL</span>';
       borderClass = 'border-rose-500/40 hover:border-rose-500/70 bg-rose-950/20';
     } else if (a.priority === 'warning') {
+      prioLabel = 'SECURITY WARNING';
       priorityBadge = '<span class="text-[10px] px-2 py-0.5 rounded font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">WARNING</span>';
       borderClass = 'border-amber-500/40 hover:border-amber-500/70 bg-amber-950/20';
     } else {
+      prioLabel = 'OPTIMIZATION RECOMMENDED';
       priorityBadge = '<span class="text-[10px] px-2 py-0.5 rounded font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">OPTIMIZING</span>';
       borderClass = 'border-cyan-500/40 hover:border-cyan-500/70 bg-cyan-950/20';
     }
 
     const actionBtn = a.actionId
-      ? '<button onclick="triggerRemediation(&quot;' + a.actionId + '&quot;)" class="px-2.5 py-1 rounded-lg text-xs font-mono font-semibold bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-200 border border-cyan-500/40 transition cursor-pointer">Quick Enforce ⚡</button>'
-      : '<span class="text-[11px] text-slate-500 font-mono">Manual Hardening</span>';
+      ? '<button onclick="triggerRemediation(&quot;' + a.actionId + '&quot;)" class="px-2.5 py-1 rounded-lg text-xs font-mono font-semibold bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-200 border border-cyan-500/40 transition cursor-pointer" data-tip-category="ONE-CLICK REMEDIATION" data-tip-title="Quick Enforce: ' + escapeHtml(a.title) + '" data-tip-desc="Dispatches atomic hardening script to resolve this anomaly immediately." data-tip-impact="Deterministic state machine locks temporarily during execution.">Quick Enforce ⚡</button>'
+      : '<span class="text-[11px] text-slate-500 font-mono cursor-help" data-tip-category="POLICY CONFIGURATION" data-tip-title="Manual Hardening Required" data-tip-desc="This setting must be toggled through the Windows Security user interface or Group Policy.">Manual Hardening</span>';
 
     return (
-      '<div class="p-3 rounded-xl border transition-all flex flex-col md:flex-row md:items-center justify-between gap-3 ' + borderClass + '">' +
+      '<div class="p-3 rounded-xl border transition-all flex flex-col md:flex-row md:items-center justify-between gap-3 ' + borderClass + ' cursor-help" ' +
+        'data-tip-category="' + prioLabel + '" ' +
+        'data-tip-title="' + escapeHtml(a.title) + '" ' +
+        'data-tip-desc="' + escapeHtml(a.desc) + '" ' +
+        'data-tip-risk="Active attack surface exposure requiring hardening">' +
         '<div class="space-y-1">' +
           '<div class="flex items-center gap-2">' +
             priorityBadge +
@@ -1298,9 +1476,72 @@ function renderAnomalyQueue(d) {
 
 function pill(ok, trueText = 'SECURED', falseText = 'EXPOSED') {
   return ok
-    ? '<span class="px-2 py-0.5 rounded text-[11px] font-mono font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>' + trueText + '</span>'
-    : '<span class="px-2 py-0.5 rounded text-[11px] font-mono font-semibold bg-rose-500/20 text-rose-300 border border-rose-500/30 flex items-center gap-1 animate-pulse"><span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span>' + falseText + '</span>';
+    ? '<span class="px-2 py-0.5 rounded text-[11px] font-mono font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1 cursor-help" data-tip-category="BASELINE COMPLIANCE" data-tip-title="Control Enforced (SECURED)" data-tip-desc="Telemetry verified that this Windows 11 defense is actively running and properly configured."><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>' + trueText + '</span>'
+    : '<span class="px-2 py-0.5 rounded text-[11px] font-mono font-semibold bg-rose-500/20 text-rose-300 border border-rose-500/30 flex items-center gap-1 animate-pulse cursor-help" data-tip-category="SECURITY VULNERABILITY" data-tip-title="Control Exposed (VULNERABLE)" data-tip-desc="Host baseline audit failed! This defense is disarmed or misconfigured." data-tip-risk="Immediate attack surface exposure"><span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span>' + falseText + '</span>';
 }
+
+const secMetadata = {
+  'Defender Real-Time Protection': {
+    category: 'ANTIMALWARE KERNEL',
+    desc: 'Continuous filesystem interceptor that analyzes binaries, downloaded scripts, and memory payloads before execution.',
+    risk: 'If disarmed, malware and cryptominers execute directly without inspection.',
+    cmd: 'Set-MpPreference -DisableRealtimeMonitoring $false'
+  },
+  'Tamper Protection Engine': {
+    category: 'SERVICE INTEGRITY',
+    desc: 'Cryptographic lock preventing unauthorized modification of Microsoft Defender registry keys, services, and policies by malware.',
+    risk: 'Malware often tries disabling Defender first via registry or PowerShell if Tamper Protection is off.',
+    cmd: 'Managed through Windows Security / Defender Security Center'
+  },
+  'HVCI Memory Integrity': {
+    category: 'VIRTUALIZATION DEFENSE',
+    desc: 'Hypervisor-Protected Code Integrity runs kernel-mode code verification inside a VBS hardware-isolated enclave.',
+    risk: 'Protects the Windows kernel from Bring Your Own Vulnerable Driver (BYOVD) exploits and rootkits.',
+    cmd: 'Core Isolation > Memory Integrity'
+  },
+  'Virtualization-Based Security (VBS)': {
+    category: 'HARDWARE ISOLATION',
+    desc: 'Leverages hardware virtualization (SLAT/VT-x/AMD-V) to create a secure memory enclave separated from the OS.',
+    risk: 'Foundation for Credential Guard, Shielded VM enclaves, and HVCI.',
+    cmd: 'Enabled in UEFI BIOS and Virtualization Platform'
+  },
+  'LSA RunAsPPL Credential Guard': {
+    category: 'CREDENTIAL DEFENSE',
+    desc: 'Runs the Local Security Authority Subsystem Service (lsass.exe) as a Protected Process Light.',
+    risk: 'Prevents Mimikatz, ProcDump, and malicious DLLs from dumping plaintext passwords and NTLM hashes from memory.',
+    cmd: 'New-ItemProperty ...\\Lsa -Name "RunAsPPL" -Value 1 (Reboot required)'
+  },
+  'SMBv1 Legacy Protocol Disabled': {
+    category: 'NETWORK PROTOCOL',
+    desc: 'Permanently disables the obsolete SMBv1 protocol containing critical vulnerabilities.',
+    risk: 'Neutralizes NSA EternalBlue exploits (MS17-010, WannaCry, NotPetya) and remote code execution.',
+    cmd: 'Set-ItemProperty ...\\LanmanServer\\Parameters -Name "SMB1" -Value 0'
+  },
+  'SMB Packet Signing Required': {
+    category: 'TRAFFIC INTEGRITY',
+    desc: 'Digitally signs every Server Message Block packet to guarantee authenticity and prevent packet tampering.',
+    risk: 'Defeats NTLM Relay attacks and Man-in-the-Middle (MitM) lateral movement on the LAN.',
+    cmd: 'Set-ItemProperty ...\\LanmanServer\\Parameters -Name "RequireSecuritySignature" -Value 1'
+  },
+  'LLMNR Multicast Spoofing Disabled': {
+    category: 'DNS & PROTOCOL DEFENSE',
+    desc: 'Disables Link-Local Multicast Name Resolution queries broadcasted over UDP port 5355.',
+    risk: 'Blocks tools like Responder and Inveigh from spoofing LLMNR responses to capture NetNTLM password hashes.',
+    cmd: 'Set-ItemProperty ...\\DNSClient -Name "EnableMulticast" -Value 0'
+  },
+  'PUA / PUP Adware Blocking': {
+    category: 'APPLICATION CONTROL',
+    desc: 'Identifies and blocks low-reputation applications, bundled junkware, browser hijackers, and coin-miners.',
+    risk: 'Prevents deceptive software and coin-miners from quietly installing and degrading performance.',
+    cmd: 'Set-MpPreference -PUAProtection Enabled'
+  },
+  'Threat Signatures Freshness': {
+    category: 'THREAT INTELLIGENCE',
+    desc: 'Verifies that Microsoft Defender malware signatures were updated within the last 48 hours.',
+    risk: 'Stale signatures leave the system blind to newly observed zero-day malware strains.',
+    cmd: 'Update-MpSignature'
+  }
+};
 
 function renderSecurityMatrix(d) {
   const container = document.getElementById('secGrid');
@@ -1319,35 +1560,55 @@ function renderSecurityMatrix(d) {
     ['Threat Signatures Freshness', (s.antivirusSigAge ?? 0) <= 2, (s.antivirusSigAge || 0) + ' days old']
   ];
 
-  container.innerHTML = items.map(([label, ok, desc]) =>
-    '<div class="p-3 rounded-xl bg-slate-900/80 border border-slate-800 hover:border-slate-700 transition flex items-center justify-between">' +
-      '<div>' +
-        '<div class="text-xs font-semibold text-white">' + label + '</div>' +
-        '<div class="text-[10px] text-slate-500 font-mono mt-0.5">' + desc + '</div>' +
-      '</div>' +
-      '<div>' + pill(ok) + '</div>' +
-    '</div>'
-  ).join('');
+  container.innerHTML = items.map(([label, ok, desc]) => {
+    const meta = secMetadata[label] || { category: 'CORE DEFENSE', desc: desc, risk: '', cmd: '' };
+    return (
+      '<div class="p-3 rounded-xl bg-slate-900/80 border border-slate-800 hover:border-slate-700 transition flex items-center justify-between cursor-help" ' +
+        'data-tip-category="' + meta.category + '" ' +
+        'data-tip-title="' + escapeHtml(label) + '" ' +
+        'data-tip-desc="' + escapeHtml(meta.desc) + '" ' +
+        (meta.risk ? 'data-tip-risk="' + escapeHtml(meta.risk) + '" ' : '') +
+        (meta.cmd ? 'data-tip-cmd="' + escapeHtml(meta.cmd) + '" ' : '') +
+        'data-tip-status="' + (ok ? '<span class=\'text-emerald-400 font-bold\'>SECURED</span>' : '<span class=\'text-rose-400 font-bold\'>EXPOSED</span>') + '">' +
+        '<div>' +
+          '<div class="text-xs font-semibold text-white">' + label + '</div>' +
+          '<div class="text-[10px] text-slate-500 font-mono mt-0.5">' + desc + '</div>' +
+        '</div>' +
+        '<div>' + pill(ok) + '</div>' +
+      '</div>'
+    );
+  }).join('');
 }
 
 function renderDisks(d) {
   const container = document.getElementById('diskList');
   if (!container) return;
-  container.innerHTML = (d.disks || []).map(disk =>
-    '<div class="p-3 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2">' +
-      '<div class="flex justify-between items-center text-xs font-semibold">' +
-        '<span class="text-white font-mono">' + disk.drive + ' (' + (disk.label || 'Local Disk') + ')</span>' +
-        '<span class="text-slate-400 font-mono">' + disk.usedPct + '% USED</span>' +
-      '</div>' +
-      '<div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">' +
-        '<div class="h-full bg-cyan-500" style="width: ' + disk.usedPct + '%"></div>' +
-      '</div>' +
-      '<div class="flex justify-between text-[11px] text-slate-400 font-mono">' +
-        '<span>Free: ' + disk.freeGB + ' GB / ' + disk.totalGB + ' GB</span>' +
-        '<span>BitLocker: <strong class="text-cyan-400">' + disk.bitlocker + '</strong></span>' +
-      '</div>' +
-    '</div>'
-  ).join('');
+  container.innerHTML = (d.disks || []).map(disk => {
+    const isEncrypted = disk.bitlocker && disk.bitlocker.includes('On');
+    const blTip = isEncrypted
+      ? 'Volume is actively encrypted with BitLocker XTS-AES encryption. Offline data tampering and physical theft are mitigated.'
+      : 'Volume lacks active BitLocker encryption! Physical removal of drive allows unauthenticated reading of filesystem contents.';
+    return (
+      '<div class="p-3 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2 cursor-help" ' +
+        'data-tip-category="STORAGE & ENCRYPTION" ' +
+        'data-tip-title="Drive ' + escapeHtml(disk.drive) + ' (' + escapeHtml(disk.label || 'Local Disk') + ')" ' +
+        'data-tip-desc="Total Capacity: ' + disk.totalGB + ' GB | Available Free: ' + disk.freeGB + ' GB (' + disk.usedPct + '% utilized).\\nBitLocker Status: ' + escapeHtml(disk.bitlocker) + ' | Cipher: ' + escapeHtml(disk.cipher) + '.\\n\\n' + blTip + '" ' +
+        'data-tip-risk="' + (isEncrypted ? '' : 'Offline forensic extraction and cold-boot physical recovery') + '" ' +
+        'data-tip-impact="' + (isEncrypted ? 'Hardware TPM / XTS-AES protection active' : 'Unencrypted volume!') + '">' +
+        '<div class="flex justify-between items-center text-xs font-semibold">' +
+          '<span class="text-white font-mono">' + disk.drive + ' (' + (disk.label || 'Local Disk') + ')</span>' +
+          '<span class="text-slate-400 font-mono">' + disk.usedPct + '% USED</span>' +
+        '</div>' +
+        '<div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">' +
+          '<div class="h-full bg-cyan-500" style="width: ' + disk.usedPct + '%"></div>' +
+        '</div>' +
+        '<div class="flex justify-between text-[11px] text-slate-400 font-mono">' +
+          '<span>Free: ' + disk.freeGB + ' GB / ' + disk.totalGB + ' GB</span>' +
+          '<span>BitLocker: <strong class="text-cyan-400">' + disk.bitlocker + '</strong></span>' +
+        '</div>' +
+      '</div>'
+    );
+  }).join('');
 }
 
 function renderNetwork(d) {
@@ -1358,21 +1619,41 @@ function renderNetwork(d) {
     container.innerHTML = '<tr><td colspan="5" class="py-3 text-slate-500 text-center font-mono">No external TCP endpoints listening.</td></tr>';
     return;
   }
-  container.innerHTML = list.map(n =>
-    '<tr class="hover:bg-slate-800/40 transition">' +
-      '<td class="py-2.5 text-white font-semibold font-mono text-xs">' + escapeHtml(n.process) + ' <span class="text-slate-500">(' + n.pid + ')</span></td>' +
-      '<td class="py-2.5 text-slate-300 font-mono text-xs">' + escapeHtml(n.localAddress) + ':' + n.localPort + '</td>' +
-      '<td class="py-2.5 text-slate-400 font-mono text-xs">' + escapeHtml(n.remoteAddress) + ':' + n.remotePort + '</td>' +
-      '<td class="py-2.5 text-cyan-400 font-mono text-xs">' + escapeHtml(n.state) + '</td>' +
-      '<td class="py-2.5">' +
-        (n.risk === 'High'
-          ? '<span class="text-[10px] px-2 py-0.5 rounded font-mono font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40">HIGH EXPOSURE</span>'
-          : n.risk === 'Medium'
-          ? '<span class="text-[10px] px-2 py-0.5 rounded font-mono font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40">LISTEN</span>'
-          : '<span class="text-[10px] px-2 py-0.5 rounded font-mono text-slate-400">LOW</span>') +
-      '</td>' +
-    '</tr>'
-  ).join('');
+  container.innerHTML = list.map(n => {
+    let riskDesc = '';
+    let riskCategory = 'NETWORK SOCKET';
+    if (n.risk === 'High') {
+      riskCategory = 'HIGH ATTACK SURFACE';
+      riskDesc = 'Listening on sensitive administrative or remote service port (' + n.localPort + '). Attackers target this port for lateral movement, credential extraction, or remote exploitation.';
+    } else if (n.risk === 'Medium') {
+      riskCategory = 'LISTENING ENDPOINT';
+      riskDesc = 'Port ' + n.localPort + ' is open and waiting for incoming connections from network clients.';
+    } else {
+      riskCategory = 'ESTABLISHED CONNECTION';
+      riskDesc = 'Active TCP connection to remote peer ' + escapeHtml(n.remoteAddress) + ':' + n.remotePort + ' in state ' + escapeHtml(n.state) + '.';
+    }
+
+    const rowTip = 'data-tip-category="' + riskCategory + '" ' +
+      'data-tip-title="Process: ' + escapeHtml(n.process) + ' (PID: ' + n.pid + ')" ' +
+      'data-tip-desc="Local: ' + escapeHtml(n.localAddress) + ':' + n.localPort + ' • Remote: ' + escapeHtml(n.remoteAddress) + ':' + n.remotePort + '\\nState: ' + escapeHtml(n.state) + '\\n\\n' + riskDesc + '" ' +
+      'data-tip-risk="' + (n.risk === 'High' ? 'Remote lateral exploitation or unauthenticated network probe' : '') + '"';
+
+    return (
+      '<tr class="hover:bg-slate-800/40 transition cursor-help" ' + rowTip + '>' +
+        '<td class="py-2.5 text-white font-semibold font-mono text-xs">' + escapeHtml(n.process) + ' <span class="text-slate-500">(' + n.pid + ')</span></td>' +
+        '<td class="py-2.5 text-slate-300 font-mono text-xs">' + escapeHtml(n.localAddress) + ':' + n.localPort + '</td>' +
+        '<td class="py-2.5 text-slate-400 font-mono text-xs">' + escapeHtml(n.remoteAddress) + ':' + n.remotePort + '</td>' +
+        '<td class="py-2.5 text-cyan-400 font-mono text-xs">' + escapeHtml(n.state) + '</td>' +
+        '<td class="py-2.5">' +
+          (n.risk === 'High'
+            ? '<span class="text-[10px] px-2 py-0.5 rounded font-mono font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40 cursor-help" data-tip-category="CRITICAL EXPOSURE" data-tip-title="High Exposure Risk (Port ' + n.localPort + ')" data-tip-desc="' + riskDesc + '" data-tip-risk="Immediate network exposure risk">HIGH EXPOSURE</span>'
+            : n.risk === 'Medium'
+            ? '<span class="text-[10px] px-2 py-0.5 rounded font-mono font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40 cursor-help" data-tip-category="LISTEN SOCKET" data-tip-title="Open Listener" data-tip-desc="Listening on ' + escapeHtml(n.localAddress) + ':' + n.localPort + '">LISTEN</span>'
+            : '<span class="text-[10px] px-2 py-0.5 rounded font-mono text-slate-400 cursor-help" data-tip-category="SOCKET" data-tip-title="Low Risk Socket" data-tip-desc="Standard internal or established peer socket.">LOW</span>') +
+        '</td>' +
+      '</tr>'
+    );
+  }).join('');
 }
 
 function renderAutoruns(d) {
@@ -1383,17 +1664,27 @@ function renderAutoruns(d) {
     container.innerHTML = '<div class="text-xs text-slate-500 font-mono p-3">No startup persistence entries registered.</div>';
     return;
   }
-  container.innerHTML = list.map(a =>
-    '<div class="p-2.5 rounded-xl bg-slate-900/80 border ' + (a.suspicious ? 'border-rose-500/50 bg-rose-950/20' : 'border-slate-800') + ' space-y-1">' +
-      '<div class="flex justify-between items-center text-xs font-semibold">' +
-        '<span class="text-white">' + escapeHtml(a.name) + '</span>' +
-        (a.suspicious
-          ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40 font-mono font-bold">SUSPICIOUS PATH</span>'
-          : '<span class="text-[10px] text-slate-500 font-mono">' + escapeHtml(a.user) + '</span>') +
-      '</div>' +
-      '<div class="text-[11px] text-slate-400 font-mono truncate" title="' + escapeHtml(a.command) + '">' + escapeHtml(a.command) + '</div>' +
-    '</div>'
-  ).join('');
+  container.innerHTML = list.map(a => {
+    const suspRisk = a.suspicious
+      ? 'Executes from non-standard path (AppData/Temp) or invokes script host (powershell/cmd/wscript/mshta). Common persistence vector for malware.'
+      : 'Standard startup persistence entry registered in Windows Registry.';
+    return (
+      '<div class="p-2.5 rounded-xl bg-slate-900/80 border ' + (a.suspicious ? 'border-rose-500/50 bg-rose-950/20' : 'border-slate-800') + ' space-y-1 cursor-help" ' +
+        'data-tip-category="' + (a.suspicious ? 'SUSPICIOUS PERSISTENCE' : 'STARTUP AUTORUN') + '" ' +
+        'data-tip-title="' + escapeHtml(a.name) + ' (' + escapeHtml(a.user) + ')" ' +
+        'data-tip-desc="Registry Location: ' + escapeHtml(a.location || 'Registry Run Key') + '\\nCommand: ' + escapeHtml(a.command) + '\\n\\n' + suspRisk + '" ' +
+        'data-tip-risk="' + (a.suspicious ? 'Potential unauthorized persistence mechanism' : '') + '" ' +
+        'data-tip-cmd="' + escapeHtml(a.command) + '">' +
+        '<div class="flex justify-between items-center text-xs font-semibold">' +
+          '<span class="text-white">' + escapeHtml(a.name) + '</span>' +
+          (a.suspicious
+            ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40 font-mono font-bold">SUSPICIOUS PATH</span>'
+            : '<span class="text-[10px] text-slate-500 font-mono">' + escapeHtml(a.user) + '</span>') +
+        '</div>' +
+        '<div class="text-[11px] text-slate-400 font-mono truncate">' + escapeHtml(a.command) + '</div>' +
+      '</div>'
+    );
+  }).join('');
 }
 
 function renderEvents(d) {
@@ -1405,7 +1696,11 @@ function renderEvents(d) {
     return;
   }
   container.innerHTML = events.map(e =>
-    '<div class="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 space-y-1">' +
+    '<div class="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 space-y-1 cursor-help" ' +
+      'data-tip-category="WINEVENT LOG" ' +
+      'data-tip-title="Event ID ' + e.id + ' • ' + escapeHtml(e.level) + '" ' +
+      'data-tip-desc="Logged: ' + escapeHtml(e.time) + '\\n\\nMessage: ' + escapeHtml(e.message) + '" ' +
+      'data-tip-impact="System diagnostic and security audit record">' +
       '<div class="flex justify-between items-center text-xs font-mono font-semibold">' +
         '<span class="text-rose-400">Event ID ' + e.id + ' • ' + escapeHtml(e.level) + '</span>' +
         '<span class="text-slate-500 text-[10px]">' + escapeHtml(e.time) + '</span>' +
@@ -1425,7 +1720,11 @@ function renderHistoryLedger() {
   }
 
   container.innerHTML = executionLedger.map(item =>
-    '<div class="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between text-xs font-mono">' +
+    '<div class="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between text-xs font-mono cursor-help" ' +
+      'data-tip-category="SESSION AUDIT RECORD" ' +
+      'data-tip-title="' + escapeHtml(item.title) + '" ' +
+      'data-tip-desc="Execution Settlement: ' + item.status + ' (' + item.durationMs + 'ms)\\nTimestamp: ' + item.timestamp + '\\nAction ID: ' + escapeHtml(item.actionId || 'N/A') + '" ' +
+      'data-tip-impact="Audit trail preserves state changes for rollback safety">' +
       '<div class="flex items-center gap-2">' +
         '<span class="text-slate-500 text-[10px]">' + item.timestamp + '</span>' +
         '<span class="font-semibold text-white">' + escapeHtml(item.title) + '</span>' +
@@ -1436,7 +1735,7 @@ function renderHistoryLedger() {
           ? '<span class="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">SUCCESS</span>'
           : '<span class="text-[10px] px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40">FAILED</span>') +
         (item.actionId && !item.actionId.startsWith('disable_') && item.actionId !== 'flush_dns' && item.actionId !== 'update_signatures'
-          ? '<button onclick="triggerRemediation(&quot;disable_' + item.actionId.replace('enable_', '') + '&quot;)" class="text-[10px] px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 cursor-pointer">Revert ↺</button>'
+          ? '<button onclick="triggerRemediation(&quot;disable_' + item.actionId.replace('enable_', '') + '&quot;)" class="text-[10px] px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 cursor-pointer" data-tip-category="ROLLBACK ACTION" data-tip-title="Undo ' + escapeHtml(item.title) + '" data-tip-desc="Dispatches rollback script to revert this change back to its prior state.">Revert ↺</button>'
           : '') +
       '</div>' +
     '</div>'
@@ -1513,6 +1812,7 @@ async function runAiAudit() {
 
 // Resilient Bootstrap Runner (Executes immediately even if DOMContentLoaded already fired)
 function bootstrapSentinel() {
+  initTooltipEngine();
   initSSE();
   fetchTelemetry(false);
 }
@@ -1575,6 +1875,76 @@ const HTML_UI = `<!DOCTYPE html>
     ::-webkit-scrollbar-track { background: #070d19; }
     ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 3px; }
     ::-webkit-scrollbar-thumb:hover { background: #334155; }
+    
+    /* Sentinel Mission Control Detailed Tooltip */
+    #sentinelTooltip {
+      position: fixed;
+      z-index: 99999;
+      pointer-events: none;
+      transition: opacity 0.12s ease-out, transform 0.12s ease-out;
+      opacity: 0;
+      transform: translateY(4px);
+      max-width: 420px;
+      min-width: 260px;
+      background: rgba(8, 14, 28, 0.96);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(56, 189, 248, 0.45);
+      border-radius: 12px;
+      padding: 10px 14px;
+      box-shadow: 0 16px 40px -4px rgba(0, 0, 0, 0.9), 0 0 20px rgba(6, 182, 212, 0.25);
+    }
+    #sentinelTooltip.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .tip-category {
+      font-size: 9px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: rgba(6, 182, 212, 0.15);
+      color: #67e8f9;
+      border: 1px solid rgba(6, 182, 212, 0.35);
+      display: inline-block;
+    }
+    .tip-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: #ffffff;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      margin-top: 4px;
+    }
+    .tip-body {
+      font-size: 11px;
+      color: #94a3b8;
+      line-height: 1.45;
+      margin-top: 4px;
+      white-space: pre-line;
+    }
+    .tip-detail {
+      margin-top: 6px;
+      padding-top: 6px;
+      border-top: 1px solid rgba(51, 65, 85, 0.5);
+      font-size: 10px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+    .tip-cmd {
+      color: #38bdf8;
+      background: rgba(15, 23, 42, 0.9);
+      padding: 3px 6px;
+      border-radius: 4px;
+      border: 1px solid rgba(56, 189, 248, 0.25);
+      word-break: break-all;
+      display: block;
+      margin-top: 3px;
+    }
+    .tip-risk {
+      color: #f87171;
+    }
   </style>
 </head>
 <body class="min-h-screen p-4 md:p-8 flex flex-col justify-between">
@@ -1613,30 +1983,62 @@ const HTML_UI = `<!DOCTYPE html>
     <!-- TOP BRIDGE BAR -->
     <header class="glass rounded-2xl p-5 flex flex-wrap items-center justify-between gap-4 border-slate-800 glow-cyan">
       <div class="flex items-center gap-4">
-        <div class="w-12 h-12 rounded-xl bg-cyan-500/10 border border-cyan-500/40 flex items-center justify-center text-cyan-400 font-bold text-xl shadow-[0_0_15px_rgba(6,182,212,0.2)]">
+        <div class="w-12 h-12 rounded-xl bg-cyan-500/10 border border-cyan-500/40 flex items-center justify-center text-cyan-400 font-bold text-xl shadow-[0_0_15px_rgba(6,182,212,0.2)] cursor-help"
+             data-tip-category="CORE SENTINEL"
+             data-tip-title="Windows 11 Sentinel Engine"
+             data-tip-desc="Sub-second autonomous host hardening & telemetry engine powered by Bun + native PowerShell + .NET CIM queries.">
           W11
         </div>
         <div>
           <div class="flex items-center gap-3">
-            <h1 class="text-xl font-bold tracking-tight text-white font-mono">WINDOWS 11 SENTINEL</h1>
-            <span id="adminBadge" class="text-xs px-2.5 py-0.5 rounded-full font-mono bg-slate-800 text-slate-300">Scanning Host...</span>
-            <span id="sseBadge" class="text-xs px-2.5 py-0.5 rounded-full font-mono bg-slate-800 text-slate-400">SSE: CONNECTING</span>
+            <h1 class="text-xl font-bold tracking-tight text-white font-mono cursor-help"
+                data-tip-category="MISSION CONTROL"
+                data-tip-title="Windows 11 Sentinel Mission Control"
+                data-tip-desc="Unified host security monitoring and atomic remediation console with real-time SSE IPC streaming.">
+              WINDOWS 11 SENTINEL
+            </h1>
+            <span id="adminBadge" class="text-xs px-2.5 py-0.5 rounded-full font-mono bg-slate-800 text-slate-300 cursor-help"
+                  data-tip-category="PROCESS INTEGRITY"
+                  data-tip-title="Process Elevation Status"
+                  data-tip-desc="Checking Windows token integrity level and SeDebugPrivilege permissions.">
+              Scanning Host...
+            </span>
+            <span id="sseBadge" class="text-xs px-2.5 py-0.5 rounded-full font-mono bg-slate-800 text-slate-400 cursor-help"
+                  data-tip-category="REAL-TIME IPC"
+                  data-tip-title="Server-Sent Events (SSE) Stream"
+                  data-tip-desc="Persistent HTTP event stream (/api/stream) broadcasting live child process stdout, stderr, execution milestones, and heartbeat pings.">
+              SSE: CONNECTING
+            </span>
           </div>
           <p class="text-xs text-slate-400 font-mono mt-0.5 flex items-center gap-2">
             <span>LIVE MISSION CONTROL CENTER</span>
             <span>•</span>
-            <span id="pipelineStateBadge" class="text-emerald-400">STATE: IDLE (READY)</span>
+            <span id="pipelineStateBadge" class="text-emerald-400 cursor-help"
+                  data-tip-category="STATE MACHINE"
+                  data-tip-title="Deterministic State Machine Mutex"
+                  data-tip-desc="Guarantees atomic command execution. Freezes interactive controls during script execution to ensure idempotency and prevent race conditions.">
+              STATE: IDLE (READY)
+            </span>
           </p>
         </div>
       </div>
 
       <div class="flex items-center gap-3 flex-wrap">
-        <input id="apiKeyInput" type="password" placeholder="Gemini API Key (or set GEMINI_API_KEY)" class="bg-slate-900/90 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 w-56 font-mono" />
-        <button onclick="runAiAudit()" id="aiBtn" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-mono font-semibold transition cursor-pointer flex items-center gap-1.5 shadow-[0_0_15px_rgba(99,102,241,0.3)]">
+        <input id="apiKeyInput" type="password" placeholder="Gemini API Key (or set GEMINI_API_KEY)" class="bg-slate-900/90 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 w-56 font-mono cursor-help"
+               data-tip-category="AI CONFIGURATION"
+               data-tip-title="Google Gemini API Key"
+               data-tip-desc="Provide your Gemini API key to activate AI threat assessment. You can also export GEMINI_API_KEY into your terminal environment." />
+        <button onclick="runAiAudit()" id="aiBtn" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-mono font-semibold transition cursor-pointer flex items-center gap-1.5 shadow-[0_0_15px_rgba(99,102,241,0.3)]"
+                data-tip-category="NEURAL AUDITING"
+                data-tip-title="Run Gemini AI Threat Audit"
+                data-tip-desc="Transmits sanitized machine telemetry to Gemini 2.5 Flash to synthesize top risks and tailor-made PowerShell remediations.">
           <span>✨</span>
           <span>Run AI Audit</span>
         </button>
-        <button onclick="fetchTelemetry(true)" id="refreshBtn" class="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-mono font-semibold transition cursor-pointer flex items-center gap-1.5 shadow-[0_0_15px_rgba(6,182,212,0.3)]">
+        <button onclick="fetchTelemetry(true)" id="refreshBtn" class="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-mono font-semibold transition cursor-pointer flex items-center gap-1.5 shadow-[0_0_15px_rgba(6,182,212,0.3)]"
+                data-tip-category="TELEMETRY SCANNER"
+                data-tip-title="Rescan Host Telemetry"
+                data-tip-desc="Forces an immediate bypass of memory cache and runs the sub-500ms compiled PowerShell + .NET CIM collector.">
           <span>⟳</span>
           <span>Rescan Host</span>
         </button>
@@ -1648,7 +2050,11 @@ const HTML_UI = `<!DOCTYPE html>
 
     <!-- HIGH REFRESH RATE STATUS CONTAINERS & SCORE METRICS -->
     <div id="sysHeaderDeck" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-      <div class="glass rounded-2xl p-5 border-slate-800 flex flex-col justify-between">
+      <div class="glass rounded-2xl p-5 border-slate-800 flex flex-col justify-between cursor-help"
+           data-tip-category="POSTURE SCORING ALGORITHM"
+           data-tip-title="Security Posture Score (0-100)"
+           data-tip-desc="Algorithmic hardening score evaluating 10 key Windows 11 defense baselines:\n• Base Baseline: 25 pts\n• Defender Real-Time: +15 pts\n• Defender PUA Protection: +15 pts\n• Tamper Protection: +10 pts\n• HVCI Memory Integrity: +10 pts\n• LSA RunAsPPL Guard: +10 pts\n• VBS Hypervisor: +5 pts\n• SMBv1 Disabled: +5 pts\n• SMB Packet Signing: +5 pts\n• LLMNR Disabled: +5 pts"
+           data-tip-impact="Target score is 100/100 for hardened enterprise posture.">
         <div>
           <div class="flex justify-between items-center">
             <span class="text-xs font-mono uppercase text-slate-400 font-semibold tracking-wider">Security Posture</span>
@@ -1664,7 +2070,10 @@ const HTML_UI = `<!DOCTYPE html>
         </div>
       </div>
 
-      <div class="glass rounded-2xl p-5 border-slate-800 flex flex-col justify-between">
+      <div class="glass rounded-2xl p-5 border-slate-800 flex flex-col justify-between cursor-help"
+           data-tip-category="SYSTEM PERFORMANCE"
+           data-tip-title="CPU Load & Physical Memory Allocation"
+           data-tip-desc="Processor execution load from Win32_PerfFormattedData_PerfOS_Processor and physical RAM usage from Win32_OperatingSystem visible memory.">
         <div>
           <div class="flex justify-between items-center">
             <span class="text-xs font-mono uppercase text-slate-400 font-semibold tracking-wider">Compute & RAM</span>
@@ -1683,7 +2092,10 @@ const HTML_UI = `<!DOCTYPE html>
         </div>
       </div>
 
-      <div class="glass rounded-2xl p-5 border-slate-800 flex flex-col justify-between">
+      <div class="glass rounded-2xl p-5 border-slate-800 flex flex-col justify-between cursor-help"
+           data-tip-category="HOST INVENTORY"
+           data-tip-title="Host Platform & Hardware Inventory"
+           data-tip-desc="NetBIOS hostname, Windows build number, installed GPU graphics controller, SMBIOS firmware version, and uptime since last boot.">
         <div>
           <div class="flex justify-between items-center">
             <span class="text-xs font-mono uppercase text-slate-400 font-semibold tracking-wider">Host Platform</span>
@@ -1700,25 +2112,43 @@ const HTML_UI = `<!DOCTYPE html>
         </div>
       </div>
 
-      <div class="glass rounded-2xl p-5 border-slate-800 flex flex-col justify-between">
+      <div class="glass rounded-2xl p-5 border-slate-800 flex flex-col justify-between cursor-help"
+           data-tip-category="ANOMALY METRICS"
+           data-tip-title="Real-Time Threat Counters"
+           data-tip-desc="Summary of currently identified host vulnerabilities, warnings, exposed high-risk network ports, and startup autorun entries.">
         <div class="flex justify-between items-center">
           <span class="text-xs font-mono uppercase text-slate-400 font-semibold tracking-wider">Anomaly Tickers</span>
           <span class="text-[10px] font-mono text-slate-400">Real-Time</span>
         </div>
         <div class="grid grid-cols-2 gap-2 mt-2 font-mono text-center">
-          <div class="p-2 rounded-lg bg-rose-950/30 border border-rose-500/30">
+          <div class="p-2 rounded-lg bg-rose-950/30 border border-rose-500/30 cursor-help"
+               data-tip-category="THREAT: CRITICAL"
+               data-tip-title="Critical Security Gaps"
+               data-tip-desc="High-severity vulnerabilities that require immediate hardening (e.g. Real-Time Protection disarmed, Tamper Protection disabled, or SMBv1 active)."
+               data-tip-risk="Immediate vulnerability to ransomware and zero-day execution.">
             <div id="tickerCritical" class="text-xl font-bold text-rose-400">0</div>
             <div class="text-[10px] text-rose-300">CRITICAL</div>
           </div>
-          <div class="p-2 rounded-lg bg-amber-950/30 border border-amber-500/30">
+          <div class="p-2 rounded-lg bg-amber-950/30 border border-amber-500/30 cursor-help"
+               data-tip-category="THREAT: WARNING"
+               data-tip-title="Security Posture Warnings"
+               data-tip-desc="Unhardened defense-in-depth settings (e.g. LSA RunAsPPL disabled, LLMNR multicast active, SMB signing missing, or stale antimalware signatures)."
+               data-tip-risk="Credential dumping and LAN hash interception.">
             <div id="tickerWarning" class="text-xl font-bold text-amber-400">0</div>
             <div class="text-[10px] text-amber-300">WARNINGS</div>
           </div>
-          <div class="p-2 rounded-lg bg-cyan-950/30 border border-cyan-500/30">
+          <div class="p-2 rounded-lg bg-cyan-950/30 border border-cyan-500/30 cursor-help"
+               data-tip-category="NETWORK ATTACK SURFACE"
+               data-tip-title="High-Risk Listening Ports"
+               data-tip-desc="Sockets bound to sensitive administrative or remote execution ports (445 SMB, 3389 RDP, 135 RPC, 5985 WinRM, 21 FTP, 23 Telnet)."
+               data-tip-risk="Exposes machine to remote lateral movement and unauthorized network ingress.">
             <div id="tickerHighRiskPorts" class="text-xl font-bold text-cyan-400">0</div>
             <div class="text-[10px] text-cyan-300">HIGH PORTS</div>
           </div>
-          <div class="p-2 rounded-lg bg-slate-900 border border-slate-800">
+          <div class="p-2 rounded-lg bg-slate-900 border border-slate-800 cursor-help"
+               data-tip-category="PERSISTENCE MONITOR"
+               data-tip-title="Startup Persistence Modules"
+               data-tip-desc="Total number of autorun entries registered under HKLM/HKCU Run keys.">
             <div id="tickerAutoruns" class="text-xl font-bold text-slate-300">0</div>
             <div class="text-[10px] text-slate-400">AUTORUNS</div>
           </div>
@@ -1727,7 +2157,10 @@ const HTML_UI = `<!DOCTYPE html>
     </div>
 
     <!-- ANOMALY PRIORITY QUEUE (TACTICAL TRIAGE DECK) -->
-    <div class="glass rounded-2xl p-5 border-slate-800 space-y-3">
+    <div class="glass rounded-2xl p-5 border-slate-800 space-y-3 cursor-help"
+         data-tip-category="THREAT TRIAGE"
+         data-tip-title="Tactical Anomaly Priority Queue"
+         data-tip-desc="Discovered system gaps sorted by exploitation velocity. Allows one-click atomic remediation with zero-downtime rollback capability.">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-2">
           <span class="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse"></span>
@@ -1741,7 +2174,10 @@ const HTML_UI = `<!DOCTYPE html>
     </div>
 
     <!-- AI NEURAL AUDIT PANEL -->
-    <div id="aiPanel" class="hidden glass rounded-2xl p-6 border-indigo-500/40 glow-emerald space-y-3">
+    <div id="aiPanel" class="hidden glass rounded-2xl p-6 border-indigo-500/40 glow-emerald space-y-3 cursor-help"
+         data-tip-category="NEURAL AUDITING"
+         data-tip-title="Gemini Neural Threat Model"
+         data-tip-desc="Zero-Leak Tokenized Sanitizer scrubs usernames, home directory paths, API tokens, and MAC addresses prior to querying Gemini 2.5 Flash.">
       <div class="flex items-center justify-between border-b border-indigo-500/20 pb-3">
         <div class="flex items-center gap-2">
           <span class="text-lg">✨</span>
@@ -1755,7 +2191,10 @@ const HTML_UI = `<!DOCTYPE html>
     <!-- CORE HARDENING MATRIX & LIVE REMEDIATION DISPATCHER -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <div class="glass rounded-2xl p-5 space-y-4 border-slate-800">
-        <div class="flex items-center justify-between">
+        <div class="flex items-center justify-between cursor-help"
+             data-tip-category="KERNEL MATRIX"
+             data-tip-title="Core Windows 11 Hardening Matrix"
+             data-tip-desc="Comprehensive audit of 10 primary security enclaves protecting kernel drivers, LSASS credentials, antimalware engines, and network protocols.">
           <h2 class="text-xs font-mono font-bold uppercase tracking-wider text-cyan-400">Core Windows 11 Hardening Matrix</h2>
           <span class="text-[11px] font-mono text-slate-500">Kernel & LSA Enclaves</span>
         </div>
@@ -1763,62 +2202,118 @@ const HTML_UI = `<!DOCTYPE html>
       </div>
 
       <div class="glass rounded-2xl p-5 space-y-4 border-slate-800">
-        <div class="flex items-center justify-between">
+        <div class="flex items-center justify-between cursor-help"
+             data-tip-category="REMEDIATION DISPATCH"
+             data-tip-title="Atomic Remediation Console"
+             data-tip-desc="Dispatches hardened PowerShell remediation commands through Bun IPC. Records execution benchmarks and registers instant rollback capability.">
           <h2 class="text-xs font-mono font-bold uppercase tracking-wider text-emerald-400">Mission Control Remediation Console</h2>
           <span class="text-[11px] font-mono text-slate-500">Atomic Rollback Enabled</span>
         </div>
         
         <div class="space-y-2.5 text-xs font-mono">
-          <div class="flex items-center justify-between p-3 rounded-xl bg-slate-900/80 border border-slate-800">
+          <div class="flex items-center justify-between p-3 rounded-xl bg-slate-900/80 border border-slate-800 cursor-help"
+               data-tip-category="DEFENDER PUA HARDENING"
+               data-tip-title="Defender PUA / PUP Adware Protection"
+               data-tip-desc="Blocks installation and execution of bundled junkware, coin-miners, and aggressive adware installers.">
             <div>
               <div class="font-semibold text-white">Defender PUA Adware Blocking</div>
               <div class="text-[10px] text-slate-400">Blocks coin-miners & bundled junkware</div>
             </div>
             <div class="flex items-center gap-2">
-              <button onclick="triggerRemediation('enable_pua')" class="px-2.5 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30 cursor-pointer">Enforce</button>
-              <button onclick="triggerRemediation('disable_pua')" class="px-2 py-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-white cursor-pointer" title="Rollback">↺</button>
+              <button onclick="triggerRemediation('enable_pua')" class="px-2.5 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30 cursor-pointer"
+                      data-tip-category="REMEDIATION: POWERSHELL"
+                      data-tip-title="Enforce Defender PUA Protection"
+                      data-tip-desc="Sets PUAProtection to Enabled in Microsoft Defender preferences and sets MpEnablePus registry keys. Blocks adware, bundlers, and coin-miners."
+                      data-tip-cmd="Set-MpPreference -PUAProtection Enabled">Enforce</button>
+              <button onclick="triggerRemediation('disable_pua')" class="px-2 py-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-white cursor-pointer"
+                      data-tip-category="ROLLBACK ACTION"
+                      data-tip-title="Rollback PUA Protection"
+                      data-tip-desc="Reverts Defender PUA blocking back to Disabled."
+                      data-tip-cmd="Set-MpPreference -PUAProtection Disabled">↺</button>
             </div>
           </div>
 
-          <div class="flex items-center justify-between p-3 rounded-xl bg-slate-900/80 border border-slate-800">
+          <div class="flex items-center justify-between p-3 rounded-xl bg-slate-900/80 border border-slate-800 cursor-help"
+               data-tip-category="SMB NETWORK DEFENSE"
+               data-tip-title="Disable Legacy SMBv1 & Require Signing"
+               data-tip-desc="Eliminates the legacy 1980s SMBv1 protocol and mandates cryptographic packet signing for all SMB sessions.">
             <div>
               <div class="font-semibold text-white">Disable SMBv1 & Require Signing</div>
               <div class="text-[10px] text-slate-400">Neutralizes EternalBlue & NTLM relays</div>
             </div>
             <div class="flex items-center gap-2">
-              <button onclick="triggerRemediation('disable_smbv1')" class="px-2.5 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30 cursor-pointer">Enforce</button>
-              <button onclick="triggerRemediation('enable_smbv1')" class="px-2 py-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-white cursor-pointer" title="Rollback">↺</button>
+              <button onclick="triggerRemediation('disable_smbv1')" class="px-2.5 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30 cursor-pointer"
+                      data-tip-category="REMEDIATION: REGISTRY"
+                      data-tip-title="Disable SMBv1 & Require Signing"
+                      data-tip-desc="Sets SMB1 to 0 and RequireSecuritySignature to 1 on LanmanServer. Neutralizes NSA EternalBlue (MS17-010) and LAN NTLM relay attacks."
+                      data-tip-cmd="Set-ItemProperty ...\LanmanServer\Parameters -Name SMB1 -Value 0">Enforce</button>
+              <button onclick="triggerRemediation('enable_smbv1')" class="px-2 py-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-white cursor-pointer"
+                      data-tip-category="ROLLBACK ACTION"
+                      data-tip-title="Rollback SMBv1 Configuration"
+                      data-tip-desc="Restores SMB1 legacy networking parameter."
+                      data-tip-cmd="Set-ItemProperty ...\LanmanServer\Parameters -Name SMB1 -Value 1">↺</button>
             </div>
           </div>
 
-          <div class="flex items-center justify-between p-3 rounded-xl bg-slate-900/80 border border-slate-800">
+          <div class="flex items-center justify-between p-3 rounded-xl bg-slate-900/80 border border-slate-800 cursor-help"
+               data-tip-category="CREDENTIAL DEFENSE"
+               data-tip-title="LSA RunAsPPL Protection"
+               data-tip-desc="Hardens the Local Security Authority Subsystem Service (lsass.exe) against memory credential harvesting.">
             <div>
               <div class="font-semibold text-white">Enable LSA RunAsPPL Protection</div>
               <div class="text-[10px] text-slate-400">Stops Mimikatz memory credential dumps</div>
             </div>
             <div class="flex items-center gap-2">
-              <button onclick="triggerRemediation('enable_lsappl')" class="px-2.5 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30 cursor-pointer">Enforce</button>
-              <button onclick="triggerRemediation('disable_lsappl')" class="px-2 py-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-white cursor-pointer" title="Rollback">↺</button>
+              <button onclick="triggerRemediation('enable_lsappl')" class="px-2.5 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30 cursor-pointer"
+                      data-tip-category="REMEDIATION: REGISTRY"
+                      data-tip-title="Enable LSA RunAsPPL Credential Guard"
+                      data-tip-desc="Configures LSASS as a Protected Process Light. Blocks Mimikatz, ProcDump, and malicious DLLs from reading memory credentials."
+                      data-tip-cmd="New-ItemProperty ...\Lsa -Name RunAsPPL -Value 1"
+                      data-tip-impact="Takes effect after next system reboot.">Enforce</button>
+              <button onclick="triggerRemediation('disable_lsappl')" class="px-2 py-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-white cursor-pointer"
+                      data-tip-category="ROLLBACK ACTION"
+                      data-tip-title="Rollback LSA RunAsPPL"
+                      data-tip-desc="Reverts LSASS protection back to default."
+                      data-tip-cmd="Set-ItemProperty ...\Lsa -Name RunAsPPL -Value 0">↺</button>
             </div>
           </div>
 
-          <div class="flex items-center justify-between p-3 rounded-xl bg-slate-900/80 border border-slate-800">
+          <div class="flex items-center justify-between p-3 rounded-xl bg-slate-900/80 border border-slate-800 cursor-help"
+               data-tip-category="DNS POISONING DEFENSE"
+               data-tip-title="Disable LLMNR Multicast"
+               data-tip-desc="Disables fallback multicast name queries to defeat rogue hash harvesters like Responder on local subnets.">
             <div>
               <div class="font-semibold text-white">Disable LLMNR Multicast Spoofing</div>
               <div class="text-[10px] text-slate-400">Blocks Responder credential spoofing on LAN</div>
             </div>
             <div class="flex items-center gap-2">
-              <button onclick="triggerRemediation('disable_llmnr')" class="px-2.5 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30 cursor-pointer">Enforce</button>
-              <button onclick="triggerRemediation('enable_llmnr')" class="px-2 py-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-white cursor-pointer" title="Rollback">↺</button>
+              <button onclick="triggerRemediation('disable_llmnr')" class="px-2.5 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30 cursor-pointer"
+                      data-tip-category="REMEDIATION: REGISTRY"
+                      data-tip-title="Disable LLMNR Multicast Spoofing"
+                      data-tip-desc="Sets EnableMulticast = 0 under DNSClient policy. Prevents Responder and LAN poisoners from capturing NetNTLM password hashes."
+                      data-tip-cmd="Set-ItemProperty ...\DNSClient -Name EnableMulticast -Value 0">Enforce</button>
+              <button onclick="triggerRemediation('enable_llmnr')" class="px-2 py-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-white cursor-pointer"
+                      data-tip-category="ROLLBACK ACTION"
+                      data-tip-title="Rollback LLMNR Multicast"
+                      data-tip-desc="Restores LLMNR multicast resolution."
+                      data-tip-cmd="Set-ItemProperty ...\DNSClient -Name EnableMulticast -Value 1">↺</button>
             </div>
           </div>
 
           <div class="grid grid-cols-2 gap-2 pt-1">
-            <button onclick="triggerRemediation('flush_dns')" class="p-2 rounded-lg bg-slate-900 border border-slate-800 hover:border-cyan-500/40 text-slate-300 text-left cursor-pointer transition">
+            <button onclick="triggerRemediation('flush_dns')" class="p-2 rounded-lg bg-slate-900 border border-slate-800 hover:border-cyan-500/40 text-slate-300 text-left cursor-pointer transition"
+                    data-tip-category="NETWORK HYGIENE"
+                    data-tip-title="Flush DNS Resolver Cache"
+                    data-tip-desc="Clears client-side DNS lookup cache to eliminate poisoned, stale, or hijacked domain name mappings."
+                    data-tip-cmd="Clear-DnsClientCache">
               <div class="font-semibold text-cyan-400">Flush DNS Cache</div>
               <div class="text-[10px] text-slate-500">Purge local client cache</div>
             </button>
-            <button onclick="triggerRemediation('update_signatures')" class="p-2 rounded-lg bg-slate-900 border border-slate-800 hover:border-cyan-500/40 text-slate-300 text-left cursor-pointer transition">
+            <button onclick="triggerRemediation('update_signatures')" class="p-2 rounded-lg bg-slate-900 border border-slate-800 hover:border-cyan-500/40 text-slate-300 text-left cursor-pointer transition"
+                    data-tip-category="THREAT INTEL"
+                    data-tip-title="Update Microsoft Defender Signatures"
+                    data-tip-desc="Downloads the latest malware definition signatures, heuristic models, and cloud intelligence from Microsoft."
+                    data-tip-cmd="Update-MpSignature">
               <div class="font-semibold text-emerald-400">Update Signatures</div>
               <div class="text-[10px] text-slate-500">Fetch latest Defender intel</div>
             </button>
@@ -1830,26 +2325,41 @@ const HTML_UI = `<!DOCTYPE html>
     <!-- LIVE MISSION CONTROL TERMINAL (STREAMING POWERSHELL IPC & SSE READOUT) -->
     <div class="glass rounded-2xl p-5 border-slate-800 space-y-3">
       <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-3">
-        <div class="flex items-center gap-2.5">
+        <div class="flex items-center gap-2.5 cursor-help"
+             data-tip-category="STREAMING IPC"
+             data-tip-title="Mission Control Terminal Stream"
+             data-tip-desc="Real-time live streaming of child PowerShell processes, CLIXML XML suppression, and SSE loopback broadcast logs.">
           <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></span>
           <h2 class="text-xs font-mono font-bold uppercase tracking-wider text-cyan-400">MISSION CONTROL TERMINAL // REAL-TIME POWERSHELL IPC STREAM</h2>
         </div>
         <div class="flex items-center gap-3 text-xs font-mono">
-          <label class="flex items-center gap-1.5 text-slate-400 cursor-pointer select-none">
-            <input id="termAutoScroll" type="checkbox" checked class="rounded bg-slate-800 border-slate-700 text-cyan-500 focus:ring-0" />
+          <label class="flex items-center gap-1.5 text-slate-400 cursor-pointer select-none"
+                 data-tip-category="VIEWPORT CONTROL"
+                 data-tip-title="Auto-Scroll Terminal"
+                 data-tip-desc="Automatically scrolls the terminal display down as new stdout and stderr IPC events stream in.">
+            <input id="termAutoScroll" type="checkbox" checked class="rounded bg-slate-800 border-slate-700 text-cyan-500 focus:ring-0 cursor-pointer" />
             <span>Auto-Scroll</span>
           </label>
-          <button onclick="copyTerminalOutput()" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer transition">
+          <button onclick="copyTerminalOutput()" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer transition"
+                  data-tip-category="CLIPBOARD"
+                  data-tip-title="Copy Terminal Output"
+                  data-tip-desc="Copies all terminal log lines to the system clipboard.">
             Copy
           </button>
-          <button onclick="clearTerminal()" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer transition">
+          <button onclick="clearTerminal()" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer transition"
+                  data-tip-category="TERMINAL CONTROL"
+                  data-tip-title="Clear Terminal Display"
+                  data-tip-desc="Clears the terminal scrollback buffer.">
             Clear
           </button>
         </div>
       </div>
 
       <div class="relative">
-        <div id="terminalOutput" class="h-64 overflow-y-auto bg-slate-950/90 rounded-xl p-4 border border-slate-800/80 scanline font-mono text-xs space-y-1">
+        <div id="terminalOutput" class="h-64 overflow-y-auto bg-slate-950/90 rounded-xl p-4 border border-slate-800/80 scanline font-mono text-xs space-y-1 cursor-text"
+             data-tip-category="IPC LOGS"
+             data-tip-title="PowerShell Execution Output Buffer"
+             data-tip-desc="Direct live stdout/stderr stream from background PowerShell child processes.">
           <div class="text-slate-500">[TERMINAL] Initialized. Awaiting telemetry scan or remediation triggers...</div>
         </div>
       </div>
@@ -1858,7 +2368,10 @@ const HTML_UI = `<!DOCTYPE html>
     <!-- TELEMETRY GRIDS: NETWORK RADAR & STORAGE -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <div class="glass rounded-2xl p-5 space-y-3 border-slate-800">
-        <div class="flex items-center justify-between">
+        <div class="flex items-center justify-between cursor-help"
+             data-tip-category="VOLUME ENCRYPTION"
+             data-tip-title="Drive Storage & BitLocker Cryptography"
+             data-tip-desc="Audits local logical disk volumes and BitLocker protection state (Win32_EncryptableVolume). XTS-AES encryption secures storage against physical disk theft.">
           <h2 class="text-xs font-mono font-bold uppercase tracking-wider text-cyan-400">Storage & BitLocker</h2>
           <span class="text-[11px] font-mono text-slate-500">System Volume State</span>
         </div>
@@ -1866,7 +2379,10 @@ const HTML_UI = `<!DOCTYPE html>
       </div>
 
       <div class="glass rounded-2xl p-5 lg:col-span-2 space-y-3 border-slate-800">
-        <div class="flex items-center justify-between">
+        <div class="flex items-center justify-between cursor-help"
+             data-tip-category="NETWORK RADAR"
+             data-tip-title="Network Radar & Port Exposure Mapping"
+             data-tip-desc="Sub-30ms netstat -ano socket enumeration cross-referenced with process PID mapping to detect exposed listeners.">
           <h2 class="text-xs font-mono font-bold uppercase tracking-wider text-cyan-400">Network Radar & Socket Port Mapping</h2>
           <span class="text-[11px] font-mono text-slate-500">netstat -ano (Sub-30ms)</span>
         </div>
@@ -1874,11 +2390,11 @@ const HTML_UI = `<!DOCTYPE html>
           <table class="w-full text-left text-xs">
             <thead class="text-slate-400 border-b border-slate-800 font-mono text-[11px]">
               <tr>
-                <th class="py-2">Process (PID)</th>
-                <th class="py-2">Local Endpoint</th>
-                <th class="py-2">Remote Endpoint</th>
-                <th class="py-2">State</th>
-                <th class="py-2">Exposure Risk</th>
+                <th class="py-2 cursor-help" data-tip-category="NETWORK RADAR" data-tip-title="Process Identifier" data-tip-desc="Name of the running executable and Windows Process ID (PID) owning this network socket.">Process (PID)</th>
+                <th class="py-2 cursor-help" data-tip-category="NETWORK RADAR" data-tip-title="Local Socket Endpoint" data-tip-desc="Local network interface IP address and TCP listening port.">Local Endpoint</th>
+                <th class="py-2 cursor-help" data-tip-category="NETWORK RADAR" data-tip-title="Remote Socket Endpoint" data-tip-desc="Remote foreign IP address and destination port (or *:* if waiting for connections).">Remote Endpoint</th>
+                <th class="py-2 cursor-help" data-tip-category="NETWORK RADAR" data-tip-title="TCP Connection State" data-tip-desc="Connection lifecycle state: Listen, Established, Time_Wait, Close_Wait, Syn_Sent, etc.">State</th>
+                <th class="py-2 cursor-help" data-tip-category="NETWORK RADAR" data-tip-title="Exposure Risk Index" data-tip-desc="Calculated attack surface score based on port sensitivity (e.g. 445 SMB, 3389 RDP, 135 RPC) and public listener binding.">Exposure Risk</th>
               </tr>
             </thead>
             <tbody id="netTable" class="divide-y border-slate-800/60 font-mono"></tbody>
@@ -1890,7 +2406,10 @@ const HTML_UI = `<!DOCTYPE html>
     <!-- STARTUP PERSISTENCE, SYSTEM EVENTS & AUDIT LEDGER -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <div class="glass rounded-2xl p-5 space-y-3 border-slate-800">
-        <div class="flex items-center justify-between">
+        <div class="flex items-center justify-between cursor-help"
+             data-tip-category="PERSISTENCE"
+             data-tip-title="Startup Persistence Sentinel"
+             data-tip-desc="Audits registry Run and RunOnce keys across HKLM and HKCU to identify autorun binaries and malicious persistence.">
           <h2 class="text-xs font-mono font-bold uppercase tracking-wider text-amber-400">Persistence Sentinel</h2>
           <span class="text-[11px] font-mono text-slate-500">Registry Run Keys</span>
         </div>
@@ -1898,7 +2417,10 @@ const HTML_UI = `<!DOCTYPE html>
       </div>
 
       <div class="glass rounded-2xl p-5 space-y-3 border-slate-800">
-        <div class="flex items-center justify-between">
+        <div class="flex items-center justify-between cursor-help"
+             data-tip-category="DIAGNOSTIC EVENTS"
+             data-tip-title="Recent Windows System Events"
+             data-tip-desc="WinEvent System Log entries filtered for Error, Critical, and Warning levels using optimized CIM provider calls.">
           <h2 class="text-xs font-mono font-bold uppercase tracking-wider text-rose-400">Recent System Events</h2>
           <span class="text-[11px] font-mono text-slate-500">WinEvent System Log</span>
         </div>
@@ -1906,7 +2428,10 @@ const HTML_UI = `<!DOCTYPE html>
       </div>
 
       <div class="glass rounded-2xl p-5 space-y-3 border-slate-800">
-        <div class="flex items-center justify-between">
+        <div class="flex items-center justify-between cursor-help"
+             data-tip-category="AUDIT TRAIL"
+             data-tip-title="Immutable Audit History Ledger"
+             data-tip-desc="Records all remediation actions executed during this session with execution timestamps, elapsed durations, and revert triggers.">
           <h2 class="text-xs font-mono font-bold uppercase tracking-wider text-cyan-400">Audit History Ledger</h2>
           <span class="text-[11px] font-mono text-slate-500">Session Snapshots</span>
         </div>
@@ -1915,10 +2440,16 @@ const HTML_UI = `<!DOCTYPE html>
     </div>
 
     <!-- SYSTEM FOOTER INFO -->
-    <div class="text-center text-xs font-mono text-slate-600 py-2">
+    <div class="text-center text-xs font-mono text-slate-600 py-2 cursor-help"
+         data-tip-category="SYSTEM INFO"
+         data-tip-title="Windows 11 Sentinel Single-File Engine"
+         data-tip-desc="Engineered with Bun and native Windows PowerShell for sub-second host hardening, zero-leak sanitization, and enterprise security compliance.">
       Windows 11 Sentinel Live Mission Control • Bun Native Engine • Zero-Leak Sandbox Security
     </div>
   </div>
+
+  <!-- FLOATING DETAILED TOOLTIP CONTAINER -->
+  <div id="sentinelTooltip" class="hidden"></div>
 
   <script src="/app.js"></script>
 </body>
